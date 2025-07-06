@@ -1,0 +1,46 @@
+{
+  "name": "Claude Code Development Environment",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+    "args": {
+      "USERNAME": "devuser",
+      "USER_UID": "1000",
+      "USER_GID": "1000",
+      "LOCALE": "ja_JP.UTF-8",
+      "TIME_ZONE": "Asia/Tokyo",
+      "NODE_VERSION": "22"
+    }
+  },
+  "remoteUser": "devuser",
+  "remoteEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/devuser/.claude",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true"
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "mounts": [
+    "source=claude-code-bashhistory,target=/commandhistory,type=volume",
+    "source=claude-code-config,target=/home/devuser/.claude,type=volume"
+  ],
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.persistentSessionReviveProcess": "never",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": "explicit"
+        }
+      },
+      "extensions": [
+        "eamodio.gitlens",
+        "EditorConfig.EditorConfig",
+        "mhutchie.git-graph",
+        "mikestead.dotenv",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}

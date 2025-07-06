@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(rm:*)",
+      "Bash(sed:*)",
+      "Bash(for file in implement fix)",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(grep:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(ls:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)"
+    ],
+    "deny": []
+  }
+}
