@@ -107,6 +107,9 @@ USER ${USERNAME}
 RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/v1.2.0/zsh-in-docker.sh)" -- \
     -p git \
     -p fzf \
+    -p https://github.com/marlonrichert/zsh-autocomplete \
+    -p https://github.com/zsh-users/zsh-autosuggestions \
+    -p https://github.com/zsh-users/zsh-completions \
     -a "source /usr/share/doc/fzf/examples/key-bindings.zsh" \
     -a "source /usr/share/doc/fzf/examples/completion.zsh" \
     -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
