@@ -13,9 +13,6 @@ ENV TZ=${TIME_ZONE}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DEVCONTAINER=true
 
-# Install Node.js repository
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-
 # Install development tools and utilities
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
@@ -33,8 +30,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     locales \
     mariadb-client \
     ncdu \
-    nodejs \
-    npm \
     openssh-client \
     postgresql-client \
     rsync \
@@ -67,6 +62,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js repository and Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs
 
 # Install Claude
 RUN npm install -g @anthropic-ai/claude-code
