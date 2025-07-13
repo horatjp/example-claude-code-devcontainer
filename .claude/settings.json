@@ -1,0 +1,38 @@
+{
+  "env": {
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(pwd:*)",
+      "Bash(cd:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "WebFetch(domain:github.com)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git reset:*)",
+      "Bash(git rebase:*)",
+      "Read(.env)",
+      "Read(id_rsa)",
+      "Read(id_ed25519)",
+      "Bash(curl:*)",
+      "Bash(wget:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "playwright",
+    "context7"
+  ],
+  "enableAllProjectMcpServers": true
+}
