@@ -3,7 +3,13 @@
     "playwright": {
       "command": "npx",
       "args": [
-        "@playwright/mcp@latest"
+        "@playwright/mcp@latest",
+        "--no-sandbox",
+        "--isolated",
+        "--browser",
+        "chromium",
+        "--executable-path",
+        "/usr/bin/chromium"
       ]
     },
     "context7": {
