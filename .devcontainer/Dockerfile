@@ -20,7 +20,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     chromium \
     curl \
     dnsutils \
-    fonts-noto \
+    fonts-noto-cjk \
     git \
     gnupg \
     imagemagick \
