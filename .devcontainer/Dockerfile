@@ -12,6 +12,8 @@ ENV LC_ALL=${LOCALE}
 ENV TZ=${TIME_ZONE}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DEVCONTAINER=true
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Install development tools and utilities
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
