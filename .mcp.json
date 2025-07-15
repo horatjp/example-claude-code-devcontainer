@@ -17,6 +17,12 @@
       "args": [
         "@upstash/context7-mcp@latest"
       ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
     }
   }
 }

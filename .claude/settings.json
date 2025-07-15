@@ -1,6 +1,5 @@
 {
-  "env": {
-  },
+  "env": {},
   "permissions": {
     "allow": [
       "Bash(ls:*)",
@@ -32,7 +31,8 @@
   },
   "enabledMcpjsonServers": [
     "playwright",
-    "context7"
+    "context7",
+    "sequential-thinking"
   ],
   "enableAllProjectMcpServers": true
 }
