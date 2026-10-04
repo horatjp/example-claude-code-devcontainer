@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>顔をタップ</title>
+<style>
+:root{--red:#c1121f;--ink:#f3e9e4;--bg:#050205}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+.hud{position:fixed;left:0;right:0;top:0;padding:max(12px,env(safe-area-inset-top)) 16px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;pointer-events:none}
+.stat{min-width:0;text-shadow:0 0 12px #000,0 0 4px #000}
+.stat small{display:block;font-size:12px;letter-spacing:.2em;opacity:.7}
+#mult{display:block;font-size:clamp(22px,6vw,40px);font-weight:700;color:var(--ink);overflow-wrap:anywhere;transition:color .4s}
+#stage{display:block;font-size:14px;letter-spacing:.3em;margin-top:2px;opacity:.85}
+.btns{display:flex;gap:8px;pointer-events:auto;flex-shrink:0}
+button{font:inherit;color:var(--ink);background:rgba(20,8,10,.7);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:8px 14px;min-height:40px;cursor:pointer}
+button:hover,button:focus-visible{border-color:var(--red);outline:none;box-shadow:0 0 0 2px rgba(193,18,31,.5)}
+.hint{position:fixed;left:0;right:0;bottom:max(18px,env(safe-area-inset-bottom));text-align:center;font-size:14px;letter-spacing:.3em;opacity:.6;pointer-events:none;text-shadow:0 0 8px #000;transition:opacity 1s}
+#intro{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.86);z-index:5}
+#intro .card{max-width:440px;width:100%;text-align:center;padding:28px 22px;border:1px solid rgba(193,18,31,.5);border-radius:14px;background:rgba(10,3,5,.9);box-shadow:0 0 60px rgba(193,18,31,.25)}
+#intro h1{margin:0 0 8px;font-size:30px;letter-spacing:.25em;color:#e63946}
+#intro p{margin:8px 0;line-height:1.8;font-size:15px}
+#intro ul{margin:12px auto;padding:0;list-style:none;font-size:13px;opacity:.8;line-height:1.8}
+#intro label{display:inline-flex;gap:8px;align-items:center;margin:10px 0;font-size:14px;cursor:pointer}
+#go{margin-top:8px;padding:12px 36px;font-size:18px;letter-spacing:.3em;background:var(--red);border-color:var(--red)}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c" role="img" aria-label="タップするほど怖くなる顔"></canvas>
+
+<div class="hud">
+  <div class="stat" aria-live="off">
+    <small>恐怖倍率</small>
+    <span id="mult">×1</span>
+    <span id="stage">平穏</span>
+    <small id="taps">0 タップ</small>
+  </div>
+  <div class="btns">
+    <button id="calm" type="button" aria-pressed="false" title="フラッシュと画面の揺れを弱めます">軽減</button>
+    <button id="mute" type="button" aria-pressed="false" aria-label="音の切り替え">🔊</button>
+    <button id="reset" type="button" aria-label="リセット">↺</button>
+  </div>
+</div>
+<div class="hint" id="hint">顔 を タップ</div>
+
+<div id="intro">
+  <div class="card">
+    <h1>顔をタップ</h1>
+    <p>触れば触るほど、<br>あの顔は怖くなる。</p>
+    <ul>
+      <li>⚠ 突然の大きな音・点滅・驚かせる演出があります</li>
+      <li>🎧 音量にご注意ください(イヤホン推奨)</li>
+      <li>心臓の弱い方・光過敏のある方は「軽減モード」を</li>
+    </ul>
+    <label><input type="checkbox" id="calmChk"> 軽減モード(点滅・揺れを弱める)</label><br>
+    <button id="go" type="button">はじめる</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), g = cv.getContext('2d');
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ss = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const rgb = (c, k = 1, a = 1) => `rgba(${c.map(v => Math.round(v * k)).join(',')},${a})`;
+const mixc = (a, b, t) => a.map((v, i) => lerp(v, b[i], t));
+const seeded = s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+const rnd = seeded(20261004);
+const TAU = Math.PI * 2;
+
+/* ---------- static (seeded) face data ---------- */
+const veins = [0, 1].map(() => Array.from({ length: 22 }, () => ({ a: rnd() * TAU, l: .35 + rnd() * .5, b: (rnd() - .5) * .6 })));
+const cracks = Array.from({ length: 10 }, (_, i) => {
+  let a = rnd() * TAU, x = Math.cos(a) * .75, y = Math.sin(a) * .95;
+  const pts = [[x, y]];
+  for (let k = 0; k < 8; k++) { a += Math.PI + (rnd() - .5) * 1.2; x += Math.cos(a) * (.08 + rnd() * .1); y += Math.sin(a) * (.08 + rnd() * .1); pts.push([x, y]); }
+  return pts;
+});
+const strands = Array.from({ length: 44 }, () => ({ x: (rnd() - .5) * 2, sway: rnd() * TAU, len: .3 + rnd() * .8, w: .008 + rnd() * .018 }));
+const upperTeeth = Array.from({ length: 16 }, () => .6 + rnd() * .8);
+const lowerTeeth = Array.from({ length: 14 }, () => .5 + rnd() * .9);
+const extraEyes = [[0, -.55], [-.55, .1], [.55, .12], [-.25, -.6], [.27, -.56], [-.62, -.34], [.62, -.32], [0, .12]]
+  .map(([x, y], i) => ({ x, y, size: .04 + (i % 3) * .012, born: -1 }));
+const drips = Array.from({ length: 7 }, () => ({ u: rnd(), len: .2 + rnd() * .7, ph: rnd() * TAU }));
+
+/* ---------- state ---------- */
+const reducedPref = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const S = {
+  started: false, taps: 0, I: 0, Iv: 0,
+  shake: 0, gape: 0, startle: 0, pulse: 0, jump: 0, dark: 0,
+  blink: 0, blinkT: 2, idle: 0, beatT: 0,
+  reduced: reducedPref, muted: false, best: 0,
+  target: { x: 0, y: 0 }, stains: [], texts: []
+};
+try { S.best = +localStorage.getItem('ftHorrorBest') || 0; } catch (_) {}
+const JUMP = .8;
+const JUMP_AT = n => n === 20 || n === 50 || n === 90 || (n > 90 && (n - 90) % 40 === 0);
+
+const MESSAGES = {
+  3: '…', 6: '目が合った', 10: 'やめて', 15: 'なんで触るの', 20: '痛い', 30: '見えてるよ', 40: 'うしろ',
+  50: 'もっと触って', 65: 'ずっと一緒', 80: '逃げられない', 100: 'もう遅い', 130: 'わたしはあなた'
+};
+const POOL = ['ずっと見てる', 'たすけて', 'うしろ', 'こっちをみて', 'いたい', 'かえして', 'いるよ', 'おいで', 'みつけた'];
+const IDLE = ['…どうして やめるの', 'もっと…', 'まだ そこにいるね', '見てるよ'];
+const STAGES = [[0, '平穏'], [5, '違和感'], [15, '不安'], [30, '恐怖'], [50, '戦慄'], [80, '狂気'], [120, '絶望'], [200, '∞']];
+
+/* ---------- layout ---------- */
+let W, H, dpr, R, cx, cy;
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  R = Math.min(W * .44, H * .33);
+  cx = W / 2; cy = H * .52;
+  if (!S.target.x) { S.target.x = cx; S.target.y = cy; }
+}
+addEventListener('resize', resize);
+resize();
+
+/* ---------- audio (WebAudio, no external files) ---------- */
+let A = null;
+function initAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  if (A) { A.ctx.resume(); return; }
+  const ctx = new AC();
+  const master = ctx.createGain(); master.gain.value = S.muted ? 0 : .7; master.connect(ctx.destination);
+  const drone = ctx.createGain(); drone.gain.value = 0;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
+  const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
+  o1.type = o2.type = 'sawtooth'; o1.frequency.value = 46; o2.frequency.value = 46.8;
+  o1.connect(lp); o2.connect(lp); lp.connect(drone); drone.connect(master); o1.start(); o2.start();
+  const whine = ctx.createOscillator(), wg = ctx.createGain(); // tinnitus
+  whine.type = 'sine'; whine.frequency.value = 3400; wg.gain.value = 0; whine.connect(wg); wg.connect(master); whine.start();
+  const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const dist = ctx.createWaveShaper(), curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const x = i / 128 - 1; curve[i] = Math.tanh(x * 6); }
+  dist.curve = curve; dist.connect(master);
+  A = { ctx, master, drone, lp, o2, wg, nb, dist };
+  ctx.resume();
+}
+function noiseBurst(dur, freq, vol, q = 1, dest) {
+  if (!A) return;
+  const { ctx } = A, t = ctx.currentTime;
+  const s = ctx.createBufferSource(); s.buffer = A.nb;
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+  const gn = ctx.createGain(); gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(.001, t + dur);
+  s.connect(f); f.connect(gn); gn.connect(dest || A.master); s.start(t, Math.random()); s.stop(t + dur + .05);
+}
+function thump(vol, pitch = 1) {
+  if (!A) return;
+  const { ctx } = A, t = ctx.currentTime;
+  const o = ctx.createOscillator(), gn = ctx.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(85 * pitch, t); o.frequency.exponentialRampToValueAtTime(34, t + .14);
+  gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(.001, t + .22);
+  o.connect(gn); gn.connect(A.master); o.start(t); o.stop(t + .25);
+}
+function scream() {
+  if (!A) return;
+  const { ctx } = A, t = ctx.currentTime;
+  const gn = ctx.createGain(); gn.gain.setValueAtTime(.0001, t); gn.gain.exponentialRampToValueAtTime(.5, t + .03); gn.gain.exponentialRampToValueAtTime(.001, t + 1.1);
+  gn.connect(A.dist);
+  [1, 1.5, 2.01].forEach((m, i) => {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(380 * m, t); o.frequency.exponentialRampToValueAtTime(1150 * m, t + .35); o.frequency.exponentialRampToValueAtTime(520 * m, t + 1);
+    const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 38 + i * 7; lg.gain.value = 60 * m;
+    lfo.connect(lg); lg.connect(o.frequency); lfo.start(t); lfo.stop(t + 1.2);
+    o.connect(gn); o.start(t); o.stop(t + 1.2);
+  });
+  noiseBurst(.9, 1800, .6, .6);
+  thump(.9, .7);
+}
+function tapSound() {
+  const I = S.Iv;
+  noiseBurst(.12, lerp(900, 260, I), .22 + .15 * I, 2);
+  thump(.25 + .35 * I, lerp(1.1, .6, I));
+  if (I > .25 && Math.random() < .35 + I * .4) noiseBurst(.7, 2200 + Math.random() * 2500, .05 + .08 * I, 6); // whisper
+}
+function updateAudio() {
+  if (!A) return;
+  const t = A.ctx.currentTime, I = S.Iv;
+  A.drone.gain.setTargetAtTime(.015 + .2 * I, t, .3);
+  A.o2.frequency.setTargetAtTime(46.8 + I * 9, t, .3);
+  A.lp.frequency.setTargetAtTime(200 + I * 700, t, .3);
+  A.wg.gain.setTargetAtTime(Math.pow(I, 3) * .018, t, .3);
+  A.master.gain.setTargetAtTime(S.muted ? 0 : .7, t, .05);
+}
+
+/* ---------- game logic ---------- */
+function stageName() { let n = STAGES[0][1]; for (const [at, name] of STAGES) if (S.taps >= at) n = name; return n; }
+function multText() {
+  const E = Math.floor(Math.pow(1.35, S.taps)) - 1;
+  if (E <= 0) return '×1';
+  if (E >= 1e21) return '×10^∞';
+  return '×10^' + (E < 1e9 ? E.toLocaleString('en-US') : E.toExponential(1).replace('e+', '×10^'));
+}
+function hud() {
+  const m = $('#mult');
+  m.textContent = multText();
+  m.style.color = `hsl(0 ${Math.round(20 + 75 * S.I)}% ${Math.round(92 - 40 * S.I)}%)`;
+  $('#stage').textContent = stageName();
+  $('#taps').textContent = `${S.taps} タップ` + (S.best ? ` ／ 最高 ${S.best}` : '');
+}
+function addText(t, big) {
+  S.texts.push({ t, x: W * (.15 + Math.random() * .7), y: H * (.14 + Math.random() * .72), life: 2.6, dur: 2.6, size: (big ? 46 : 22) + Math.random() * 14 + S.I * 20 });
+}
+function tap(x, y) {
+  S.taps++; S.idle = 0;
+  S.shake = 1; S.gape = 1; S.startle = 1; S.pulse = 1;
+  S.target.x = x; S.target.y = y;
+  const I = 1 - Math.exp(-S.taps / 45);
+  if (I > .1 && S.stains.length < 60) {
+    const n = 1;
+    for (let i = 0; i < n; i++) S.stains.push({ x: x + (Math.random() - .5) * 40 * i, y: y + (Math.random() - .5) * 40 * i, r: (3 + Math.random() * 10) * (.5 + I), born: performance.now(), dots: Array.from({ length: 6 }, () => [(Math.random() - .5) * 2.6, (Math.random() - .5) * 2.6, .1 + Math.random() * .3]), drip: 30 + Math.random() * 90 * I });
+  } else if (S.stains.length >= 60) S.stains.shift();
+  if (MESSAGES[S.taps]) addText(MESSAGES[S.taps], S.taps >= 50);
+  else if (S.taps > 130 && Math.random() < .35) addText(POOL[Math.floor(Math.random() * POOL.length)], true);
+  if (JUMP_AT(S.taps)) { S.jump = JUMP; scream(); navigator.vibrate?.(S.reduced ? 0 : [200, 60, 200]); }
+  else { tapSound(); navigator.vibrate?.(S.reduced ? 0 : 25); }
+  if (S.taps > S.best) { S.best = S.taps; try { localStorage.setItem('ftHorrorBest', S.best); } catch (_) {} }
+  $('#hint').style.opacity = 0;
+  hud();
+}
+function reset() {
+  Object.assign(S, { taps: 0, I: 0, Iv: 0, shake: 0, gape: 0, startle: 0, pulse: 0, jump: 0, dark: 0, idle: 0, stains: [], texts: [] });
+  extraEyes.forEach(e => e.born = -1);
+  $('#hint').style.opacity = .6;
+  hud();
+}
+
+/* ---------- update ---------- */
+let last = performance.now(), time = 0, noiseCv, noisePat, noiseT = 0;
+function update(dt) {
+  S.I = 1 - Math.exp(-S.taps / 45);
+  S.Iv += (S.I - S.Iv) * Math.min(1, dt * 3);
+  S.shake = Math.max(0, S.shake - dt * 3);
+  S.gape = Math.max(0, S.gape - dt * 2.5);
+  S.startle = Math.max(0, S.startle - dt * 3);
+  S.pulse = Math.max(0, S.pulse - dt * 4);
+  S.jump = Math.max(0, S.jump - dt);
+  S.dark = Math.max(0, S.dark - dt);
+  S.blinkT -= dt;
+  if (S.blinkT < 0) { S.blink = 1; S.blinkT = (2 + Math.random() * 4) * (1 + S.Iv * 3); }
+  S.blink = Math.max(0, S.blink - dt / .2);
+  if (!S.reduced && S.Iv > .3 && Math.random() < (.004 + S.Iv * .02)) S.dark = .07;
+  if (S.started) {
+    S.idle += dt;
+    const period = 60 / (62 + 110 * S.Iv);
+    S.beatT += dt;
+    if (S.beatT >= period) { S.beatT -= period; S.pulse = Math.max(S.pulse, .8); thump(.18 + .4 * S.Iv); setTimeout(() => thump(.1 + .25 * S.Iv, .9), 170); }
+    if (S.idle > 6 && S.taps > 0 && Math.random() < dt * .25) { addText(IDLE[Math.floor(Math.random() * IDLE.length)], false); S.idle = 3; }
+  }
+  S.texts.forEach(t => t.life -= dt);
+  S.texts = S.texts.filter(t => t.life > 0);
+  updateAudio();
+}
+
+/* ---------- render ---------- */
+const SKIN = [[236, 214, 198], [150, 162, 142], [92, 102, 92]];
+const skinAt = I => I < .5 ? mixc(SKIN[0], SKIN[1], I / .5) : mixc(SKIN[1], SKIN[2], (I - .5) / .5);
+
+function render() {
+  const I = S.Iv, red = S.reduced;
+  const jt = S.jump > 0 ? S.jump / JUMP : 0, p = 1 - jt;
+  const zoom = jt > 0 ? (p < .15 ? ss(0, 1, p / .15) : 1 - ss(0, 1, (p - .15) / .85)) : 0;
+
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#050205'; g.fillRect(0, 0, W, H);
+  const glow = g.createRadialGradient(cx, cy, 0, cx, cy, R * 2.4);
+  glow.addColorStop(0, `rgba(130,0,12,${.12 + .35 * I + .15 * S.pulse * I})`); glow.addColorStop(1, 'rgba(130,0,12,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+
+  /* gaze: follows the pointer early, then locks onto the player */
+  const stare = ss(.5, .9, I);
+  let gx = (S.target.x - cx) / R, gy = (S.target.y - cy) / R;
+  const gl = Math.hypot(gx, gy); if (gl > 1) { gx /= gl; gy /= gl; }
+  gx *= 1 - stare; gy *= 1 - stare;
+
+  const sh = S.shake * S.shake * (red ? 3 : 6 + 26 * I);
+  const jx = (Math.random() - .5) * 2 * (sh + (jt && !red ? 14 : 0)), jy = (Math.random() - .5) * 2 * (sh + (jt && !red ? 14 : 0));
+  const base = 1 + .28 * I + .03 * S.pulse * (.3 + I) + 1.5 * zoom;
+  const tilt = Math.sin(time * .7) * .02 * (1 + I * 3) - .16 * ss(.5, .95, I);
+  const melt = ss(.55, 1, I);
+  const skin = skinAt(I);
+
+  g.save();
+  g.translate(cx + jx, cy + jy + Math.sin(time * .9) * .01 * R);
+  g.rotate(tilt); g.scale(base, base);
+
+  /* back hair */
+  g.fillStyle = '#040303';
+  g.beginPath(); g.ellipse(0, .12 * R, 1.02 * R, 1.28 * R, 0, 0, TAU); g.fill();
+
+  /* head */
+  const hg = g.createRadialGradient(-.2 * R, -.3 * R, .1 * R, 0, 0, 1.1 * R);
+  hg.addColorStop(0, rgb(skin, 1.05)); hg.addColorStop(.7, rgb(skin, .85)); hg.addColorStop(1, rgb(skin, .45));
+  g.fillStyle = hg;
+  g.beginPath(); g.ellipse(0, 0, .8 * R, R, 0, 0, TAU); g.fill();
+
+  /* eyes */
+  const lid = S.blink > 0 ? Math.sin(S.blink * Math.PI) : 0;
+  const open = .09 + .21 * I + .1 * S.startle + (jt ? .12 : 0);
+  const eyes = [-1, 1].map(side => {
+    const mul = side > 0 ? 1 + .25 * melt : 1 - .1 * melt;
+    return { side, ex: side * .33 * R, ey: (-.15 + .05 * melt) * R + Math.sin(time * 2 + side) * .006 * R * melt, rx: (.17 + .09 * I + .03 * S.startle) * R * mul, ry: Math.max(1, open * R * mul * (1 - lid)) };
+  });
+  eyes.forEach((e, idx) => {
+    const sock = g.createRadialGradient(e.ex, e.ey, e.rx * .5, e.ex, e.ey, e.rx * 2);
+    sock.addColorStop(0, `rgba(15,0,5,${.3 + .6 * I})`); sock.addColorStop(1, 'rgba(15,0,5,0)');
+    g.fillStyle = sock; g.beginPath(); g.ellipse(e.ex, e.ey, e.rx * 2, e.ry * 2.4 + e.rx * .4, 0, 0, TAU); g.fill();
+
+    g.save();
+    g.beginPath(); g.ellipse(e.ex, e.ey, e.rx, e.ry, 0, 0, TAU); g.clip();
+    g.fillStyle = rgb(mixc([245, 240, 230], [232, 185, 175], I)); g.fillRect(e.ex - e.rx, e.ey - e.ry, e.rx * 2, e.ry * 2);
+    const nv = Math.floor(I * 22 + S.startle * 4);
+    g.strokeStyle = `rgba(175,10,20,${.35 + .4 * I})`; g.lineWidth = 1 + I;
+    for (let k = 0; k < Math.min(nv, 22); k++) {
+      const v = veins[idx][k]; g.beginPath();
+      g.moveTo(e.ex + Math.cos(v.a) * e.rx, e.ey + Math.sin(v.a) * e.ry);
+      g.quadraticCurveTo(e.ex + Math.cos(v.a + v.b) * e.rx * .6, e.ey + Math.sin(v.a + v.b) * e.ry * .6, e.ex + Math.cos(v.a) * e.rx * (1 - v.l), e.ey + Math.sin(v.a) * e.ry * (1 - v.l));
+      g.stroke();
+    }
+    const ir = (.085 - .03 * I) * R, px = e.ex + gx * .07 * R, py = e.ey + gy * .05 * R;
+    g.fillStyle = rgb(mixc([60, 35, 25], [10, 0, 0], I)); g.beginPath(); g.arc(px, py, ir, 0, TAU); g.fill();
+    if (I > .35) { g.strokeStyle = `rgba(210,0,0,${I})`; g.lineWidth = 1.5; g.stroke(); }
+    g.fillStyle = '#000'; g.beginPath(); g.arc(px, py, ir * (.55 - .3 * I), 0, TAU); g.fill();
+    g.fillStyle = `rgba(255,255,255,${.8 * (1 - I)})`; g.beginPath(); g.arc(px - ir * .3, py - ir * .3, ir * .18, 0, TAU); g.fill();
+    g.restore();
+
+    g.strokeStyle = `rgba(30,0,10,${.55 + .35 * I})`; g.lineWidth = 2 + I * 2;
+    g.beginPath(); g.ellipse(e.ex, e.ey, e.rx, e.ry, 0, 0, TAU); g.stroke();
+
+    /* brows */
+    g.strokeStyle = 'rgba(30,18,16,.9)'; g.lineCap = 'round'; g.lineWidth = .04 * R;
+    const bi = e.ey - e.rx * 1.25 + (.1 * I - .05 * S.startle) * R, bo = e.ey - e.rx * 1.3 - .05 * I * R - .04 * S.startle * R;
+    g.beginPath(); g.moveTo(e.side * .1 * R, bi); g.quadraticCurveTo(e.side * .3 * R, Math.min(bi, bo) - .04 * R, e.side * .55 * R, bo); g.stroke();
+  });
+
+  /* extra eyes */
+  const nExtra = S.taps >= 35 ? Math.min(extraEyes.length, Math.floor((S.taps - 35) / 10) + 1) : 0;
+  for (let i = 0; i < nExtra; i++) {
+    const e = extraEyes[i]; if (e.born < 0) e.born = time;
+    const k = ss(0, .6, time - e.born), sz = e.size * R * k;
+    if (sz < .5) continue;
+    const ey = e.y * R, ex = e.x * R, h = sz * (1 - lid * .8) * .7;
+    g.fillStyle = 'rgba(15,0,5,.5)'; g.beginPath(); g.ellipse(ex, ey, sz * 1.6, h * 1.8 + 1, 0, 0, TAU); g.fill();
+    g.fillStyle = '#eadad2'; g.beginPath(); g.ellipse(ex, ey, sz, Math.max(1, h), 0, 0, TAU); g.fill();
+    g.save(); g.beginPath(); g.ellipse(ex, ey, sz, Math.max(1, h), 0, 0, TAU); g.clip();
+    g.fillStyle = '#100000'; g.beginPath(); g.arc(ex + gx * sz * .4, ey + gy * sz * .3, sz * .55, 0, TAU); g.fill();
+    g.restore();
+    g.strokeStyle = 'rgba(30,0,10,.8)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(ex, ey, sz, Math.max(1, h), 0, 0, TAU); g.stroke();
+  }
+
+  /* nose */
+  g.fillStyle = `rgba(0,0,0,${.18 + .2 * I})`;
+  [-1, 1].forEach(s => { g.beginPath(); g.ellipse(s * .06 * R, .2 * R, .03 * R, .02 * R, 0, 0, TAU); g.fill(); });
+  g.strokeStyle = `rgba(0,0,0,${.12 + .12 * I})`; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(-.04 * R, -.02 * R); g.quadraticCurveTo(-.08 * R, .12 * R, -.06 * R, .18 * R); g.stroke();
+
+  /* mouth */
+  const wob = Math.sin(time * 7) * .05 * I;
+  const mw = (.3 + .48 * I + .04 * S.gape) * R, y0 = (.52 + .06 * melt) * R;
+  const lift = (.05 + .1 * I) * R, yc = y0 - lift;
+  const mo = ((.015 + .5 * I) * (1 + wob) + .25 * S.gape + (jt ? .3 : 0)) * R;
+  const upC = yc + lift * 1.6, loC = upC + 2 * mo;
+  const mouthPath = () => { g.beginPath(); g.moveTo(-mw, yc); g.quadraticCurveTo(0, upC, mw, yc); g.quadraticCurveTo(0, loC, -mw, yc); g.closePath(); };
+  if (mo > .03 * R) {
+    mouthPath();
+    const mg = g.createLinearGradient(0, yc, 0, yc + mo * 1.5); mg.addColorStop(0, '#2a0007'); mg.addColorStop(1, '#000');
+    g.fillStyle = mg; g.fill();
+    g.save(); mouthPath(); g.clip();
+    const tl = (.03 + .11 * I) * R * ss(.04, .3, I + S.gape * .1), nu = upperTeeth.length;
+    for (let k = 0; k < nu; k++) {
+      const u = (k + .5) / nu, x = (2 * u - 1) * mw, y = (1 - u) * (1 - u) * yc + 2 * u * (1 - u) * upC + u * u * yc, tw = 2 * mw / nu * .85, len = tl * upperTeeth[k];
+      g.fillStyle = rgb(mixc([236, 228, 205], [190, 175, 130], I)); g.fillRect(x - tw / 2, y - 1, tw, len);
+      g.strokeStyle = 'rgba(40,0,5,.7)'; g.lineWidth = 1; g.strokeRect(x - tw / 2, y - 1, tw, len);
+    }
+    if (I > .4) {
+      const nl = lowerTeeth.length;
+      for (let k = 0; k < nl; k++) {
+        const u = (k + .5) / nl, x = (2 * u - 1) * mw * .92, y = (1 - u) * (1 - u) * yc + 2 * u * (1 - u) * loC + u * u * yc, tw = 2 * mw / nl * .8, len = tl * lowerTeeth[k] * .9;
+        g.fillStyle = '#cfc2a0'; g.fillRect(x - tw / 2, y - len + 1, tw, len); g.strokeStyle = 'rgba(40,0,5,.7)'; g.strokeRect(x - tw / 2, y - len + 1, tw, len);
+      }
+    }
+    g.restore();
+  }
+  g.strokeStyle = `rgba(70,8,14,${.8})`; g.lineWidth = 2 + 3 * I; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(-mw, yc); g.quadraticCurveTo(0, upC, mw, yc); g.stroke();
+  if (mo > .03 * R) { g.beginPath(); g.moveTo(-mw, yc); g.quadraticCurveTo(0, loC, mw, yc); g.stroke(); }
+
+  /* blood: tears and mouth drips */
+  const bl = ss(.3, 1, I);
+  if (bl > 0) {
+    eyes.forEach(e => {
+      const L = (bl + .1 * Math.sin(time * 2 + e.side)) * R * 1.1, x0 = e.ex + e.side * e.rx * .3, y0b = e.ey + e.ry;
+      const bg = g.createLinearGradient(0, y0b, 0, y0b + L); bg.addColorStop(0, 'rgba(140,0,10,.9)'); bg.addColorStop(1, 'rgba(90,0,5,0)');
+      g.strokeStyle = bg; g.lineWidth = .028 * R; g.beginPath(); g.moveTo(x0, y0b); g.quadraticCurveTo(x0 + e.side * .03 * R, y0b + L * .5, x0 + e.side * .01 * R, y0b + L); g.stroke();
+    });
+  }
+  if (I > .55) {
+    const a = ss(.55, .9, I);
+    drips.forEach(d => {
+      const x = lerp(-mw * .8, mw * .8, d.u), y = yc + lift * .8 + mo * .9 * (1 - Math.abs(2 * d.u - 1) * .2), L = d.len * a * R * (.6 + .4 * Math.sin(time * 1.3 + d.ph));
+      g.strokeStyle = `rgba(120,0,10,${.85 * a})`; g.lineWidth = .02 * R; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + L); g.stroke();
+    });
+  }
+
+  /* cracks */
+  cracks.forEach((pts, i) => {
+    const th = (i + 1) / cracks.length * .85; if (I < th) return;
+    const pr = ss(0, .12, I - th), n = Math.max(1, Math.floor(pts.length * pr));
+    g.strokeStyle = 'rgba(12,4,4,.85)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(pts[0][0] * R, pts[0][1] * R);
+    for (let k = 1; k < n; k++) g.lineTo(pts[k][0] * R, pts[k][1] * R);
+    g.stroke();
+  });
+
+  /* front hair (Sadako-style bangs) */
+  g.strokeStyle = '#030202'; g.lineCap = 'round';
+  const ns = Math.floor(10 + 34 * I);
+  for (let k = 0; k < ns; k++) {
+    const s = strands[k], x0 = s.x * .78 * R, sway = Math.sin(time * .8 + s.sway) * .02 * R * (1 + I * 2);
+    const yEnd = (-.2 + s.len * (.5 + .9 * I)) * R;
+    g.lineWidth = s.w * R; g.beginPath(); g.moveTo(x0, -.97 * R);
+    g.bezierCurveTo(x0 * 1.1 + sway, -.4 * R, x0 * 1.18 - sway, yEnd * .5, x0 * 1.1 + sway * 2, yEnd); g.stroke();
+  }
+  const bang = ss(.5, .9, I);
+  if (bang > 0) {
+    g.lineWidth = .09 * R; g.globalAlpha = bang;
+    g.beginPath(); g.moveTo(-.18 * R, -.98 * R); g.bezierCurveTo(-.05 * R, -.5 * R, -.5 * R, -.2 * R, -.36 * R + Math.sin(time * 1.2) * .01 * R, .08 * R); g.stroke();
+    g.globalAlpha = 1;
+  }
+  g.restore();
+
+  /* blood stains on the screen */
+  const now = performance.now();
+  S.stains.forEach(s => {
+    const age = Math.min(1, (now - s.born) / 5000), len = s.drip * age;
+    g.fillStyle = 'rgba(115,0,10,.8)'; g.strokeStyle = 'rgba(115,0,10,.8)';
+    g.beginPath(); g.arc(s.x, s.y, s.r, 0, TAU); g.fill();
+    s.dots.forEach(d => { g.beginPath(); g.arc(s.x + d[0] * s.r * 1.6, s.y + d[1] * s.r * 1.6, s.r * d[2], 0, TAU); g.fill(); });
+    g.lineWidth = Math.max(2, s.r * .22); g.lineCap = 'round'; g.beginPath(); g.moveTo(s.x, s.y); g.lineTo(s.x, s.y + len); g.stroke();
+  });
+
+  /* whispered words */
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  S.texts.forEach(t => {
+    const a = Math.sin(clamp(t.life / t.dur, 0, 1) * Math.PI), j = red ? 0 : S.Iv * 3;
+    g.font = `700 ${t.size}px "Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif`;
+    g.globalAlpha = a; g.shadowColor = '#a00'; g.shadowBlur = 14; g.fillStyle = '#d8232f';
+    g.fillText(t.t, t.x + (Math.random() - .5) * j, t.y + (Math.random() - .5) * j);
+  });
+  g.globalAlpha = 1; g.shadowBlur = 0;
+
+  /* vignette + heartbeat flush */
+  const vg = g.createRadialGradient(cx, cy, Math.min(W, H) * .25, cx, cy, Math.hypot(W, H) * .6);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, `rgba(0,0,0,${.55 + .4 * I})`);
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  if (S.pulse > 0 && I > 0) { g.fillStyle = `rgba(150,0,0,${S.pulse * .12 * I})`; g.fillRect(0, 0, W, H); }
+
+  /* film noise */
+  if (!noiseCv) { noiseCv = document.createElement('canvas'); noiseCv.width = noiseCv.height = 128; }
+  noiseT -= 1;
+  if (noiseT <= 0) {
+    noiseT = 3;
+    const nc = noiseCv.getContext('2d'), id = nc.createImageData(128, 128);
+    for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+    nc.putImageData(id, 0, 0); noisePat = g.createPattern(noiseCv, 'repeat');
+  }
+  g.globalAlpha = .03 + .12 * I; g.fillStyle = noisePat; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+
+  /* glitch slices */
+  if (!red && I > .5 && Math.random() < (I - .4) * .25) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    for (let k = 0; k < 2 + Math.floor(I * 5); k++) {
+      const y = Math.random() * cv.height, h = (4 + Math.random() * 40) * dpr, off = (Math.random() - .5) * 90 * dpr * I;
+      g.drawImage(cv, 0, y, cv.width, h, off, y, cv.width, h);
+    }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  /* jumpscare flash (skipped in calm mode) & light-out flicker */
+  if (jt > 0 && !red && p < .3) {
+    g.fillStyle = Math.floor(time * 30) % 2 ? `rgba(200,0,0,${.55 * (1 - p / .3)})` : `rgba(255,255,255,${.35 * (1 - p / .3)})`;
+    g.fillRect(0, 0, W, H);
+  } else if (jt > 0 && red) { g.fillStyle = `rgba(90,0,0,${.35 * zoom})`; g.fillRect(0, 0, W, H); }
+  if (S.dark > 0) { g.fillStyle = 'rgba(0,0,0,.85)'; g.fillRect(0, 0, W, H); }
+}
+
+/* ---------- loop ---------- */
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000 || .016); last = now; time += dt;
+  update(dt); render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- input / UI ---------- */
+cv.addEventListener('pointerdown', e => { e.preventDefault(); if (S.started) tap(e.clientX, e.clientY); });
+cv.addEventListener('pointermove', e => { S.target.x = e.clientX; S.target.y = e.clientY; });
+addEventListener('keydown', e => {
+  if ((e.code === 'Space' || e.code === 'Enter') && S.started && document.activeElement === document.body) { e.preventDefault(); tap(cx + (Math.random() - .5) * R, cy + (Math.random() - .5) * R); }
+});
+document.addEventListener('visibilitychange', () => { if (A) document.hidden ? A.ctx.suspend() : A.ctx.resume(); });
+
+function setCalm(v) { S.reduced = v; $('#calm').setAttribute('aria-pressed', v); $('#calm').style.borderColor = v ? '#7fb069' : ''; $('#calmChk').checked = v; }
+$('#calmChk').checked = reducedPref; setCalm(reducedPref);
+$('#calmChk').addEventListener('change', e => setCalm(e.target.checked));
+$('#calm').addEventListener('click', () => setCalm(!S.reduced));
+$('#mute').addEventListener('click', e => { S.muted = !S.muted; e.currentTarget.textContent = S.muted ? '🔇' : '🔊'; e.currentTarget.setAttribute('aria-pressed', S.muted); });
+$('#reset').addEventListener('click', reset);
+$('#go').addEventListener('click', () => { S.started = true; $('#intro').classList.add('hidden'); initAudio(); });
+
+hud();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
